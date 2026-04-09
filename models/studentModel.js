@@ -16,7 +16,8 @@ const studentSchema = new Schema({
         required: true
     },
     rollNumber: {
-        type: String
+        type: String,
+        required: true,
     },
     examsTaken: [{
         type: mongoose.Schema.Types.ObjectId,
@@ -26,7 +27,8 @@ const studentSchema = new Schema({
         type: String
     },
     profileImage: {
-        type: String
+        url: String,
+        publicId: String,
     },
     secCode: {
         type: String,
@@ -41,11 +43,13 @@ const studentSchema = new Schema({
     certificate: {
         fileUrl: { type: String },
         issuedDate: { type: Date },
+        publicId: { type: String },
         verificationCode: { type: String }
     },
     marksheet: {
         fileUrl: { type: String },
         issuedDate: { type: Date },
+        publicId: { type: String },
         verificationCode: { type: String }
     },
 

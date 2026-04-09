@@ -18,74 +18,185 @@ const {
   uploadCourse
 } = require("../utils/cloudinaryStorage");
 
-router.post("/:instituteId/student", uploadProfile.single("image"), async (req, res) => {
-  const { instituteId } = req.params;
-  const { name, password, rollNumber, dateOfBirth } = req.body;
-  // Input validation
-if (!name || !password || !rollNumber || !dateOfBirth) {
-  console.log("❌ Missing fields:", { name, password, rollNumber, dateOfBirth });
+// router.post("/:instituteId/student", uploadProfile.single("image"), async (req, res) => {
+//   const { instituteId } = req.params;
+//   const { name, password, rollNumber, dateOfBirth } = req.body;
+//   // Input validation
+// if (!name || !password || !rollNumber || !dateOfBirth) {
+//   console.log("❌ Missing fields:", { name, password, rollNumber, dateOfBirth });
 
-  return res.status(400).json({
-    error: "All fields are required",
-  });
-}
+//   return res.status(400).json({
+//     error: "All fields are required",
+//   });
+// }
 
-  try {
-    // Find the institute by its ID
-    const institute = await instituteModel.findById(instituteId);
-    if (!institute) {
-      return res.status(404).json({ error: "Institute not found" });
+//   try {
+//     // Find the institute by its ID
+//     const institute = await instituteModel.findById(instituteId);
+//     if (!institute) {
+//       return res.status(404).json({ error: "Institute not found" });
+//     }
+
+//     // Check if a student with the same roll number already exists
+//     const existingStudent = await Student.findOne({ rollNumber, institute: instituteId });
+// if (existingStudent) {
+//   return res.status(409).json({
+//     error: `Roll number ${rollNumber} already exists. Please use a different one.`,
+//   });
+// }
+
+//     // Hash the password before saving the student
+//     const hashedPassword = await bcrypt.hash(password, 10);
+
+//     // Create a new student
+//     const newStudent = new Student({
+//       studentName: name,
+//       password: hashedPassword,
+//       secCode: password,
+//       rollNumber,
+//       dateOfBirth,
+//       profileImage: req.file?.path || "", // Save the Firebase image URL here
+//       institute: instituteId,
+//     });
+
+//     // Save the student and update the institute's students array
+//     await newStudent.save();
+//     institute.students.push(newStudent._id);
+//     await institute.save();
+
+//     // Respond with the created student and institute (excluding the password)
+//     res.status(201).json({
+//       message: "Student created successfully",
+//       student: {
+//         id: newStudent._id,
+//         name: newStudent.studentName,
+//         rollNumber: newStudent.rollNumber,
+//         dateOfBirth: newStudent.dateOfBirth,
+//         profileImage: newStudent.profileImage, // Return the image URL
+//         institute: newStudent.institute,
+//       },
+//       institute: {
+//         id: institute._id,
+//         name: institute.name,
+//         email: institute.email,
+//       },
+//     });
+//   } catch (error) {
+//     console.error("CREATE ERROR FULL:", error); // 🔥 ADD THIS
+//     res.status(500).json({ error: error.message });
+//   }
+// });
+router.post(
+  "/:instituteId/student",
+  (req, res, next) => {
+    uploadProfile.single("image")(req, res, function (err) {
+      if (err) {
+        console.log("❌ MULTER ERROR:", err);
+        return res.status(400).json({
+          error: err.message || "File upload error",
+        });
+      }
+      next();
+    });
+  },
+  async (req, res) => {
+    try {
+      const { instituteId } = req.params;
+      const { name, password, rollNumber, dateOfBirth } = req.body;
+
+      console.log("📥 BODY:", req.body);
+      console.log("📂 FILE:", req.file);
+
+      // ✅ Basic validation
+      if (!name || !password || !rollNumber || !dateOfBirth) {
+        return res.status(400).json({
+          error: "All fields are required",
+        });
+      }
+
+      // ✅ File validation
+      if (!req.file || !req.file.path || !req.file.filename) {
+        return res.status(400).json({
+          error: "Image upload failed",
+        });
+      }
+
+      // ✅ File type validation (important)
+      if (!req.file.mimetype.startsWith("image/")) {
+        return res.status(400).json({
+          error: "Only image files are allowed",
+        });
+      }
+
+      // ✅ Find institute
+      const institute = await instituteModel.findById(instituteId);
+      if (!institute) {
+        return res.status(404).json({
+          error: "Institute not found",
+        });
+      }
+
+      // ✅ Check duplicate roll number (safe)
+      const existingStudent = await Student.findOne({
+        rollNumber,
+        institute: instituteId,
+      });
+
+      if (existingStudent) {
+        return res.status(409).json({
+          error: `Roll number ${rollNumber} already exists`,
+        });
+      }
+
+      // ✅ Hash password
+      const hashedPassword = await bcrypt.hash(password, 10);
+
+      // ✅ Create student (FIXED IMAGE STRUCTURE)
+      const newStudent = new Student({
+        studentName: name,
+        password: hashedPassword,
+        secCode: password,
+        rollNumber,
+        dateOfBirth,
+        profileImage: {
+          url: req.file.path,
+          publicId: req.file.filename,
+        },
+        institute: instituteId,
+      });
+
+      await newStudent.save();
+
+      institute.students.push(newStudent._id);
+      await institute.save();
+
+      return res.status(201).json({
+        message: "Student created successfully",
+        student: {
+          id: newStudent._id,
+          name: newStudent.studentName,
+          rollNumber: newStudent.rollNumber,
+          dateOfBirth: newStudent.dateOfBirth,
+          profileImage: newStudent.profileImage,
+        },
+      });
+
+    } catch (error) {
+      console.log("🔥 SERVER ERROR:", error);
+
+      // ✅ Handle duplicate key error (MongoDB)
+      if (error.code === 11000) {
+        return res.status(409).json({
+          error: "Duplicate roll number detected",
+        });
+      }
+
+      return res.status(500).json({
+        error: error.message || "Internal server error",
+      });
     }
-
-    // Check if a student with the same roll number already exists
-    const existingStudent = await Student.findOne({ rollNumber, institute: instituteId });
-if (existingStudent) {
-  return res.status(409).json({
-    error: `Roll number ${rollNumber} already exists. Please use a different one.`,
-  });
-}
-
-    // Hash the password before saving the student
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    // Create a new student
-    const newStudent = new Student({
-      studentName: name,
-      password: hashedPassword,
-      secCode: password,
-      rollNumber,
-      dateOfBirth,
-      profileImage: req.file?.path || "", // Save the Firebase image URL here
-      institute: instituteId,
-    });
-
-    // Save the student and update the institute's students array
-    await newStudent.save();
-    institute.students.push(newStudent._id);
-    await institute.save();
-
-    // Respond with the created student and institute (excluding the password)
-    res.status(201).json({
-      message: "Student created successfully",
-      student: {
-        id: newStudent._id,
-        name: newStudent.studentName,
-        rollNumber: newStudent.rollNumber,
-        dateOfBirth: newStudent.dateOfBirth,
-        profileImage: newStudent.profileImage, // Return the image URL
-        institute: newStudent.institute,
-      },
-      institute: {
-        id: institute._id,
-        name: institute.name,
-        email: institute.email,
-      },
-    });
-  } catch (error) {
-    console.error("CREATE ERROR FULL:", error); // 🔥 ADD THIS
-    res.status(500).json({ error: error.message });
   }
-});
+);
 
 router.get("/my-institute", authMiddleware, async (req, res) => {
   try {
@@ -273,36 +384,108 @@ router.post("/:questionId/edit-question", async (req, res) => {
   }
 });
 
-router.post("/:studentId/edit-student", async (req, res) => {
-  const { studentId } = req.params;
-  const { name, rollNumber, dateOfBirth } = req.body;
+router.post(
+  "/:studentId/edit-student",
+  (req, res, next) => {
+    uploadProfile.single("image")(req, res, function (err) {
+      if (err) {
+        console.log("❌ MULTER ERROR:", err);
+        return res.status(400).json({
+          error: err.message || "File upload error",
+        });
+      }
+      next();
+    });
+  },
+  async (req, res) => {
+    try {
+      const { studentId } = req.params;
+      const { name, rollNumber, dateOfBirth } = req.body;
 
-  try {
-    // Prepare an object with only the fields that are present in req.body
-    const updateFields = {};
-    if (name !== undefined) updateFields.studentName = name;
-    if (rollNumber !== undefined) updateFields.rollNumber = rollNumber;
-    if (dateOfBirth !== undefined) updateFields.dateOfBirth = dateOfBirth;
+      console.log("📥 BODY:", req.body);
+      console.log("📂 FILE:", req.file);
 
-    // Find and update the student details with only the specified fields
-    const student = await Student.findOneAndUpdate(
-      { _id: studentId },
-      updateFields,
-      { new: true }
-    );
+      // ✅ Find student first
+      const student = await Student.findById(studentId);
+      if (!student) {
+        return res.status(404).json({ error: "Student not found" });
+      }
 
-    if (!student) {
-      return res.status(404).json({ error: "Student not found" });
+      // ✅ Duplicate roll number check (ignore self)
+      if (rollNumber && rollNumber !== student.rollNumber) {
+        const existing = await Student.findOne({
+          rollNumber,
+          institute: student.institute,
+          _id: { $ne: studentId },
+        });
+
+        if (existing) {
+          return res.status(409).json({
+            error: `Roll number ${rollNumber} already exists`,
+          });
+        }
+      }
+
+      // ✅ Update fields safely
+      if (name !== undefined) student.studentName = name;
+      if (rollNumber !== undefined) student.rollNumber = rollNumber;
+      if (dateOfBirth !== undefined) student.dateOfBirth = dateOfBirth;
+
+      // ✅ Handle image update
+      if (req.file && req.file.path && req.file.filename) {
+
+        // ✅ DELETE OLD IMAGE
+        if (student.profileImage) {
+          try {
+            let publicId = student.profileImage?.publicId;
+
+            // fallback for old string data
+            if (!publicId && typeof student.profileImage === "string") {
+              const url = student.profileImage;
+              const parts = url.split("/");
+              const fileName = parts.pop(); // abc.png
+              publicId = "raretech/profile_images/" + fileName.split(".")[0];
+            }
+
+            if (publicId) {
+              const result = await cloudinary.uploader.destroy(publicId);
+              console.log("🧹 DELETE RESULT:", result);
+            }
+
+          } catch (err) {
+            console.log("❌ DELETE ERROR:", err);
+          }
+        }
+
+        // ✅ SAVE NEW IMAGE
+        student.profileImage = {
+          url: req.file.path,
+          publicId: req.file.filename,
+        };
+      }
+
+      await student.save();
+
+      res.status(200).json({
+        message: "Student updated successfully",
+        student,
+      });
+
+    } catch (error) {
+      console.log("🔥 UPDATE ERROR:", error);
+
+      if (error.code === 11000) {
+        return res.status(409).json({
+          error: "Duplicate roll number detected",
+        });
+      }
+
+      res.status(500).json({
+        error: error.message || "Internal server error",
+      });
     }
-
-    res
-      .status(200)
-      .json({ message: "Student details updated successfully", student });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
   }
-});
-
+);
 
 // Delete Feature
 
@@ -758,13 +941,13 @@ router.post("/:studentId/upload-certificate", uploadDocument.fields([
         certificate: student.certificate || "Not Uploaded",
         marksheet: student.marksheet || "Not Uploaded",
       });
-    } catch (err) {
-      console.log("FULL ERROR:", err);
-      console.log("RESPONSE:", err.response);
-      console.log("DATA:", err.response?.data);
+    }catch (err) {
+  console.log("FULL ERROR:", err);
+  console.log("RESPONSE:", err.response);
+  console.log("DATA:", err.response?.data);
 
-      setError(err.response?.data?.message || "Upload failed");
-    }
+  setError(err.response?.data?.message || "Upload failed");
+}
   }
 );
 
